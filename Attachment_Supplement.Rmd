@@ -1,0 +1,662 @@
+---
+title: "IQ, Personality, Psychopathology & Attachment"
+author: "Magdalena March"
+date: "2025-12-03"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Load in your data.
+```{r, message = FALSE, warning = FALSE}
+#Packages
+library(gt)
+library(psych)
+library(dplyr)
+library(moments)
+library(MVN)
+library(MASS)
+library(stringr)
+
+# A note, people without attachment data were removed as part of data pre-processing. 
+data <- read.csv("/Users/march341/Desktop/IQ and Attachment /Attachment_Dataset.csv")
+```
+
+Here is a list of variables we will be working with:
+
+- Age
+- Sex
+- BFAS_N (Neuroticism from the BFAS)
+- BFAS_A (Agreeableness from the BFAS)
+- BFAS_C (Conscientiousness from the BFAS)
+- BFAS_E (Extraversion from the BFAS)
+- BFAS_O (Openness from the BFAS)
+- BlockDesignScaled (From WAIS)
+- SimilaritiesScaled (From WAIS)
+- MatrixReasoningScaled (From WAIS)
+- VocabularyScaled (From WAIS)
+- VCI = Verbal Comprehension Index (e.g., Similarities, Vocabulary from WAIS; measures verbal reasoning/knowledge)
+- PRI = Perceptual Reasoning Index (e.g., Block Design, Matrix Reasoning from WAIS; measures nonverbal/visual-spatial and fluid reasoning)
+- IQ4 (Full scale IQ from the WAIS)
+- Avoidance (Average score on avoidance items from AAQ)
+- Ambivalence (Average score on ambivalence items from AAQ)
+- BFAS_Volatility_PR (Volatility from BFAS, peer rating)
+- BFAS_Withdrawal_PR (Withdrawal from BFAS, peer rating)
+- BFAS_Compassion_PR (Compassion from BFAS, peer rating)
+- BFAS_Politeness_PR (Politeness from BFAS, peer rating)
+- BFAS_Industriousness_PR (Industriousness from BFAS, peer rating)
+- BFAS_Orderliness_PR (Orderliness from BFAS, peer rating)
+- BFAS_Enthusiasm_PR (Enthusiasm from BFAS, peer rating)
+- BFAS_Assertiveness_PR (Assertiveness from BFAS, peer rating)
+- BFAS_Intellect_PR (Intellect from BFAS, peer rating)
+- BFAS_Openness_PR (Openness from BFAS, peer rating)
+- BFAS_N_PR (Neuroticism from BFAS, peer rating)
+- BFAS_A_PR (Agreebleness from BFAS, peer rating)
+- BFAS_C_PR (Conscientiousness from BFAS, peer rating)
+- BFAS_E_PR (Extraversion from BFAS, peer rating)
+- BFAS_O_PR (Openness from BFAS, peer rating)
+- Volatility (Volatility from BFAS)
+- Withdrawal (Withdrawal from BFAS)
+- Compassion (Compassion from BFAS)
+- Politeness (Politeness from BFAS)
+- Industriousness (Industriousness from BFAS)
+- Orderliness (Orderliness from BFAS)
+- Enthusiasm (Enthusiasm from BFAS)
+- Assertiveness (Assertiveness from BFAS)
+- Intellect (Intellect from BFAS)
+- Openness (Openness from BFAS)
+- ToM_Mem (Theory of mind memory score)
+- ToM (Theory of mind score; taps the empathetic reasoning component)
+- PID5_Anxiousness (Anxiousness from the PID-5)
+- PID5_Depressivity (Depressivity from the PID-5)
+- PID5_Emotional_lability (Emotional lability from the PID-5)
+- PID5_Hostility (Hostility from the PID-5)
+- PID5_Perseveration (Perseveration from the PID-5)
+- PID5_Rigid_Perfectionism (Rigid perfectionism from the PID-5)
+- PID5_Separation_insecurity (Separation insecurity from the PID-5)
+- PID5_Submissiveness (Submissiveness from the PID-5)
+- PID5_Suspiciousness (Suspiciousness from the PID-5)
+- PID5_Withdrawal (Withdrawal from the PID-5)
+- PID5_Attention_Seeking (Attention seeking from the PID-5)
+- PID5_Callousness (Callousness from the PID-5)
+- PID5_Deceitfulness (Deceitfulness from the PID-5)
+- PID5_Grandiosity (Grandiosity from the PID-5)
+- PID5_Manipulativeness (Manipulativeness from the PID-5)
+- PID5_Intimacy_Avoidance (Intimacy avoidance from the PID-5)
+- PID5_Restricted_affectivity (Restricted affectivity from the PID-5)
+- PID5_Distractibility (Distractibility from the PID-5)
+- PID5_Eccentricity (Eccentricity from the PID-5)
+- PID5_Perceptual_Dysregulation (Perceptual dysregulation from the PID-5)
+- PID5_Risk_Taking (Risk taking from the PID-5)
+- PID5_Unusual_Beliefs_Experiences (Unusual beliefs/experiences from the PID-5)
+- PID5_Impulsivity (Impulsivity from the PID-5)
+- PID5_Irresponsibility (Irresponsibility from the PID-5)
+- PID5_Anhedonia (Anhedonia from the PID-5)
+
+These are the coding instructions for the PID-5 domains as recommended by the APA:
+
+- Negative Affectivity (3): Emotional Lability, Anxiousness, Separation Insecurity
+- Detachment (3): Withdrawal, Intimacy Avoidance, Anhedonia
+- Antagonism (3): Manipulativeness, Deceitfulness, Grandiosity
+- Disinhibition (3): Irresponsibility, Impulsivity, Distractibility
+- Psychoticism (3): Unusual Beliefs & Experiences, Perceptual Dysregulation, Eccentricity
+
+Data Preparation:
+```{r}
+# Function to average self and peer report
+safe_average <- function(self_score, peer_score) {
+  self_std <- scale(self_score)[, 1]
+  peer_std <- scale(peer_score)[, 1]
+  result <- rep(NA_real_, length(self_std))
+  both_available <- !is.na(self_std) & !is.na(peer_std)
+  result[both_available] <- (self_std[both_available] + peer_std[both_available]) / 2
+  only_self <- !is.na(self_std) & is.na(peer_std)
+  result[only_self] <- self_std[only_self]
+  result
+}
+
+# Function to reverse code
+reverse_auto <- function(x) {
+  xmax <- suppressWarnings(max(x, na.rm = TRUE))
+  if (is.finite(xmax)) {
+    if (xmax <= 3.25) return(3 - x)
+    if (xmax <= 4.25) return(4 - x)
+  }
+  -x
+}
+
+# ---- Construct variables ----
+# Attachments
+avoidant           <- scale(data$Avoidance)[, 1]
+ambivalent         <- scale(data$Ambivalence)[, 1]            
+secure_attachment  <- -scale((avoidant + ambivalent) / 2)[, 1]  # higher = more secure
+
+# Demographics / cognition
+age        <- data$Age
+sex        <- data$Sex
+iq_total   <- scale(data$IQ4)[, 1]
+verbal     <- scale(data$VCICompositeScore)[, 1]
+perceptual <- scale(data$PRICompositeScore)[, 1]
+
+# Big Five (self/peer, safe-average)
+neuroticism       <- safe_average(data$BFAS_N, data$BFAS_N_PR)
+openness          <- safe_average(data$BFAS_O, data$BFAS_O_PR)
+agreeableness     <- safe_average(data$BFAS_A, data$BFAS_A_PR)
+conscientiousness <- safe_average(data$BFAS_C, data$BFAS_C_PR)
+extraversion      <- safe_average(data$BFAS_E, data$BFAS_E_PR)
+
+# BFAS facets (safe-average)
+volatility       <- safe_average(data$Volatility,      data$BFAS_Volatility_PR)
+withdrawal       <- safe_average(data$Withdrawal,      data$BFAS_Withdrawal_PR)
+compassion       <- safe_average(data$Compassion,      data$BFAS_Compassion_PR)
+politeness       <- safe_average(data$Politeness,      data$BFAS_Politeness_PR)
+industriousness  <- safe_average(data$Industriousness, data$BFAS_Industriousness_PR)
+orderliness      <- safe_average(data$Orderliness,     data$BFAS_Orderliness_PR)
+enthusiasm       <- safe_average(data$Enthusiasm,      data$BFAS_Enthusiasm_PR)
+assertiveness    <- safe_average(data$Assertiveness,   data$BFAS_Assertiveness_PR)
+intellect        <- safe_average(data$Intellect,       data$BFAS_Intellect_PR)
+openness_facet   <- safe_average(data$Openness,        data$BFAS_Openness_PR)
+
+# Theory of Mind
+Theory_of_mind_mem <- scale(data$ToM_Mem)[, 1]
+Theory_of_mind     <- scale(data$ToM)[, 1]
+
+# PID-5 facets (z-scored)
+PID5_Anxiousness              <- scale(data$PID5_Anxiousness)[, 1]
+PID5_Depressivity             <- scale(data$PID5_Depressivity)[, 1]
+PID5_Emotional_lability       <- scale(data$PID5_Emotional_lability)[, 1]
+PID5_Hostility                <- scale(data$PID5_Hostility)[, 1]
+PID5_Perseveration            <- scale(data$PID5_Perseveration)[, 1]
+PID5_Rigid_Perfectionism      <- scale(data$PID5_Rigid_Perfectionism)[, 1]
+PID5_Separation_insecurity    <- scale(data$PID5_Separation_insecurity)[, 1]
+PID5_Submissiveness           <- scale(data$PID5_Submissiveness)[, 1]
+PID5_Suspiciousness           <- scale(data$PID5_Suspiciousness)[, 1]
+PID5_Withdrawal               <- scale(data$PID5_Withdrawal)[, 1]
+PID5_Attention_Seeking        <- scale(data$PID5_Attention_Seeking)[, 1]
+PID5_Callousness              <- scale(data$PID5_Callousness)[, 1]
+PID5_Deceitfulness            <- scale(data$PID5_Deceitfulness)[, 1]
+PID5_Grandiosity              <- scale(data$PID5_Grandiosity)[, 1]
+PID5_Manipulativeness         <- scale(data$PID5_Manipulativeness)[, 1]
+PID5_Intimacy_Avoidance       <- scale(data$PID5_Intimacy_Avoidance)[, 1]
+PID5_Restricted_affectivity   <- scale(data$PID5_Restricted_affectivity)[, 1]
+PID5_Distractibility          <- scale(data$PID5_Distractibility)[, 1]
+PID5_Eccentricity             <- scale(data$PID5_Eccentricity)[, 1]
+PID5_Perceptual_Dysregulation <- scale(data$PID5_Perceptual_Dysregulation)[, 1]
+PID5_Risk_Taking              <- scale(data$PID5_Risk_Taking)[, 1]
+PID5_Unusual_Beliefs_Experiences <- scale(data$PID5_Unusual_Beliefs_Experiences)[, 1]
+PID5_Impulsivity              <- scale(data$PID5_Impulsivity)[, 1]
+PID5_Irresponsibility         <- scale(data$PID5_Irresponsibility)[, 1]
+PID5_Anhedonia                <- scale(data$PID5_Anhedonia)[, 1]
+
+# Optional reversed perfectionism (if you later want Disinhibition + reversed rigid perfectionism)
+if ("PID5_Rigid_Perfectionism" %in% names(data)) {
+  data <- data %>% mutate(PID5_Rigid_Perfectionism_R = scale(reverse_auto(PID5_Rigid_Perfectionism))[,1])
+}
+
+# PID-5 domains (row-means as composites)
+expanded <- list(
+  Negative_Affectivity = c("PID5_Emotional_lability","PID5_Anxiousness","PID5_Separation_insecurity",
+                           "PID5_Submissiveness","PID5_Hostility","PID5_Perseveration","PID5_Depressivity"),
+  Detachment           = c("PID5_Withdrawal","PID5_Intimacy_Avoidance","PID5_Anhedonia",
+                           "PID5_Restricted_affectivity","PID5_Suspiciousness"),
+  Antagonism           = c("PID5_Manipulativeness","PID5_Deceitfulness","PID5_Grandiosity",
+                           "PID5_Callousness","PID5_Attention_Seeking"),
+  Disinhibition        = c("PID5_Irresponsibility","PID5_Impulsivity","PID5_Distractibility","PID5_Risk_Taking",
+                           if ("PID5_Rigid_Perfectionism_R" %in% names(data))
+                             "PID5_Rigid_Perfectionism_R" else "PID5_Rigid_Perfectionism"),
+  Psychoticism         = c("PID5_Unusual_Beliefs_Experiences","PID5_Perceptual_Dysregulation","PID5_Eccentricity")
+)
+
+data <- data %>%
+  mutate(
+    Negative_Affectivity = scale(rowMeans(dplyr::select(., all_of(expanded$Negative_Affectivity)), na.rm = TRUE)),
+    Detachment           = scale(rowMeans(dplyr::select(., all_of(expanded$Detachment)),           na.rm = TRUE)),
+    Antagonism           = scale(rowMeans(dplyr::select(., all_of(expanded$Antagonism)),           na.rm = TRUE)),
+    Disinhibition        = scale(rowMeans(dplyr::select(., all_of(expanded$Disinhibition)),        na.rm = TRUE)),
+    Psychoticism         = scale(rowMeans(dplyr::select(., all_of(expanded$Psychoticism)),         na.rm = TRUE))
+  )
+
+# ---- Create the final data frame  ----
+analysis_data <- data.frame(
+  # Outcomes
+  avoidant, ambivalent, secure_attachment,
+  # Demographics / cognition
+  age, sex, iq_total, verbal, perceptual,
+  # Big Five & facets
+  neuroticism, openness, agreeableness, conscientiousness, extraversion,
+  volatility, withdrawal, compassion, politeness, industriousness, orderliness,
+  enthusiasm, assertiveness, intellect, openness_facet,
+  # PID-5 domains
+  Negative_Affectivity = data$Negative_Affectivity,
+  Detachment           = data$Detachment,
+  Antagonism           = data$Antagonism,
+  Disinhibition        = data$Disinhibition,
+  Psychoticism         = data$Psychoticism,
+  # PID-5 facets
+  PID5_Anxiousness, PID5_Depressivity, PID5_Emotional_lability, PID5_Hostility,
+  PID5_Perseveration, PID5_Rigid_Perfectionism, PID5_Separation_insecurity,
+  PID5_Submissiveness, PID5_Suspiciousness, PID5_Withdrawal, PID5_Attention_Seeking,
+  PID5_Callousness, PID5_Deceitfulness, PID5_Grandiosity, PID5_Manipulativeness,
+  PID5_Intimacy_Avoidance, PID5_Restricted_affectivity, PID5_Distractibility,
+  PID5_Eccentricity, PID5_Perceptual_Dysregulation, PID5_Risk_Taking,
+  PID5_Unusual_Beliefs_Experiences, PID5_Impulsivity, PID5_Irresponsibility,
+  PID5_Anhedonia,
+  # Theory of mind
+  Theory_of_mind_mem, Theory_of_mind
+)
+          
+  # Perform Mardia's Test, we fail it and don't have normal data!
+  mardia_test <- mardia(data = analysis_data)
+  mardia_test #Fails Mardia's test, use robust statistics 
+  
+  # Per-variable skew 
+  skews <- sapply(analysis_data, function(col) psych::skew(col, na.rm = TRUE))
+  
+  # Flag extreme skew
+  bad_skew <- names(skews[abs(skews) > 3])
+  bad_skew
+  
+  # Compute excess kurtosis for each variable. 
+  excess_kurtosis <- sapply(analysis_data, function(x) {
+    k <- kurtosis(x, na.rm=TRUE)
+    k - 3
+  })
+  
+  # Print those little nuggets
+  excess_kurtosis
+  
+  # Flag any with excess kurtosis > 8 for diagnosis of really bad kurtosis. 
+  bad_kurtosis <- names(excess_kurtosis[abs(excess_kurtosis) > 8])
+  bad_kurtosis
+  
+  # Count missing per variable
+  colSums(is.na(analysis_data))
+  
+  # Proportion missing per variable
+  colMeans(is.na(analysis_data))
+  
+# For Big Five/BFAS-only dataset (no PID-5 columns):
+B5Data <- analysis_data %>%
+  dplyr::select(-c(
+    PID5_Anxiousness, PID5_Depressivity, PID5_Emotional_lability, PID5_Hostility,
+    PID5_Perseveration, PID5_Rigid_Perfectionism, PID5_Separation_insecurity,
+    PID5_Submissiveness, PID5_Suspiciousness, PID5_Withdrawal, PID5_Attention_Seeking,
+    PID5_Callousness, PID5_Deceitfulness, PID5_Grandiosity, PID5_Manipulativeness,
+    PID5_Intimacy_Avoidance, PID5_Restricted_affectivity, PID5_Distractibility,
+    PID5_Eccentricity, PID5_Perceptual_Dysregulation, PID5_Risk_Taking,
+    PID5_Unusual_Beliefs_Experiences, PID5_Impulsivity, PID5_Irresponsibility,
+    PID5_Anhedonia, Negative_Affectivity, Detachment, Antagonism, Disinhibition, Psychoticism
+  ))  %>%
+  na.omit()
+
+# PID-5 data set
+PID5data <- analysis_data %>%
+  na.omit()
+```
+
+Main Analysis Block
+```{r}
+# ---- Blocks in desired order: DEMOG -> IQ -> ToM -> Personality ----
+DEMOG          <- c("age","sex")
+IQ_TOT         <- c("iq_total")
+IQ_VP          <- c("verbal","perceptual")
+THEORY_OF_MIND <- c("Theory_of_mind_mem","Theory_of_mind")
+
+BIG5 <- c("neuroticism","openness","agreeableness","conscientiousness","extraversion")
+
+BFAS_FACETS <- c(
+  "volatility","withdrawal","compassion","politeness","industriousness",
+  "orderliness","enthusiasm","assertiveness","intellect","openness_facet"
+)
+
+PID5_DOMAINS <- c("Negative_Affectivity","Detachment","Antagonism","Disinhibition","Psychoticism")
+
+PID5_FACETS <- c(
+  "PID5_Anhedonia","PID5_Anxiousness","PID5_Attention_Seeking","PID5_Callousness","PID5_Deceitfulness",
+  "PID5_Depressivity","PID5_Distractibility","PID5_Eccentricity","PID5_Emotional_lability","PID5_Grandiosity",
+  "PID5_Hostility","PID5_Impulsivity","PID5_Intimacy_Avoidance","PID5_Irresponsibility","PID5_Manipulativeness",
+  "PID5_Perceptual_Dysregulation","PID5_Perseveration","PID5_Restricted_affectivity",
+  "PID5_Rigid_Perfectionism",
+  "PID5_Risk_Taking","PID5_Separation_insecurity","PID5_Submissiveness","PID5_Suspiciousness",
+  "PID5_Unusual_Beliefs_Experiences","PID5_Withdrawal"
+)
+
+# ---- Attachment outcomes helper ----
+attachment_outcome <- function(which = c("secure","avoidant","anxious")) {
+  which <- match.arg(which)
+  switch(which,
+         secure   = "secure_attachment",
+         avoidant = "avoidant",
+         anxious  = "ambivalent")
+}
+
+# ---- Robust block test (HC3) ----
+robust_block_test <- function(restricted_model, full_model) {
+  vcov_robust <- sandwich::vcovHC(full_model, type = "HC3")
+  beta_full <- coef(full_model)
+  beta_rest <- coef(restricted_model)
+  added <- setdiff(names(beta_full), names(beta_rest))
+  if (!length(added)) return(NULL)
+  b <- beta_full[added]
+  V <- vcov_robust[added, added, drop = FALSE]
+  W <- as.numeric(t(b) %*% solve(V) %*% b)
+  list(
+    Wald_statistic = W,
+    df = length(added),
+    p_value = pchisq(W, df = length(added), lower.tail = FALSE),
+    variables_tested = added
+  )
+}
+
+# ---- Stepwise engine ----
+stepwise_hc3 <- function(outcome, data, blocks, labels = NULL) {
+  stopifnot(is.character(outcome), length(outcome) == 1)
+  if (is.null(labels)) labels <- paste0("Step_", seq_along(blocks))
+  
+  # lock columns to those present
+  ALL <- unique(c(outcome, unlist(blocks)))
+  dat <- data[, intersect(ALL, names(data)), drop = FALSE]  
+  
+  cum_preds <- character(0)
+  models <- robust <- vector("list", length(blocks))
+  anovas <- walds <- vector("list", max(0, length(blocks) - 1))
+  
+  for (i in seq_along(blocks)) {
+    block <- blocks[[i]]
+    block <- block[block %in% names(dat)]
+    cum_preds <- c(cum_preds, block)
+    fml <- as.formula(paste(outcome, "~", paste(cum_preds, collapse = " + ")))
+    fit <- lm(fml, data = dat)
+    models[[i]] <- fit
+    robust[[i]] <- lmtest::coeftest(fit, vcov = sandwich::vcovHC(fit, type = "HC3"))
+    if (i > 1) {
+      anovas[[i - 1]] <- anova(models[[i - 1]], models[[i]])
+      walds[[i - 1]]  <- robust_block_test(models[[i - 1]], models[[i]])
+    }
+  }
+  names(models) <- names(robust) <- labels
+  names(anovas) <- names(walds)  <- paste0(labels[-length(labels)], "_vs_", labels[-1])
+  list(models = models, robust = robust, anova = anovas, wald = walds,
+       outcome = outcome, labels = labels, blocks = blocks)
+}
+
+# ---- Print report ----
+print_report <- function(fit) {
+  cat("\n", strrep("=", 72), "\n", sep = "")
+  cat("Outcome:", fit$outcome, "\n")
+  cat(strrep("=", 72), "\n")
+  rs  <- sapply(fit$models, function(m) summary(m)$r.squared)
+  ars <- sapply(fit$models, function(m) summary(m)$adj.r.squared)
+  cat("R-squared by step:\n")
+  for (i in seq_along(rs)) {
+    cat(sprintf("  %-22s  R2 = %0.3f   adj.R2 = %0.3f\n", names(fit$models)[i], rs[i], ars[i]))
+  }
+  if (length(rs) > 1) {
+    cat("\nΔR2 vs previous step:\n")
+    for (i in 2:length(rs)) {
+      cat(sprintf("  %s: ΔR2 = %0.3f\n", names(fit$models)[i], rs[i] - rs[i-1]))
+    }
+  }
+  if (length(fit$wald)) {
+    cat("\nRobust block (Wald) tests (HC3):\n")
+    for (nm in names(fit$wald)) {
+      w <- fit$wald[[nm]]
+      if (is.null(w)) next
+      cat(sprintf("  %-30s  Wald = %0.3f, df = %d, p = %.4f  |  vars: %s\n",
+                  nm, w$Wald_statistic, w$df, w$p_value, paste(w$variables_tested, collapse = ", ")))
+    }
+  }
+  cat("\nRobust coefficients (final step):\n")
+  print(fit$robust[[length(fit$robust)]])
+  invisible(fit)
+}
+
+# ---- Functions to run each chunk of predictors ----
+# PID-5 FACETS
+run_pid5_facets_IQ_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_TOT, THEORY_OF_MIND, PID5_FACETS),
+    labels = c("Demographics","IQ_Total","Theory_of_Mind","PID5_Facets")
+  )
+}
+run_pid5_facets_VP_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_VP, THEORY_OF_MIND, PID5_FACETS),
+    labels = c("Demographics","Verbal+Perceptual","Theory_of_Mind","PID5_Facets")
+  )
+}
+
+# PID-5 DOMAINS
+run_pid5_domains_IQ_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_TOT, THEORY_OF_MIND, PID5_DOMAINS),
+    labels = c("Demographics","IQ_Total","Theory_of_Mind","PID5_Domains")
+  )
+}
+run_pid5_domains_VP_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_VP, THEORY_OF_MIND, PID5_DOMAINS),
+    labels = c("Demographics","Verbal+Perceptual","Theory_of_Mind","PID5_Domains")
+  )
+}
+
+# BFAS FACETS
+run_bfas_facets_IQ_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_TOT, THEORY_OF_MIND, BFAS_FACETS),
+    labels = c("Demographics","IQ_Total","Theory_of_Mind","BFAS_Facets")
+  )
+}
+run_bfas_facets_VP_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_VP, THEORY_OF_MIND, BFAS_FACETS),  # NOTE: case-insensitive, but keep consistent
+    labels = c("Demographics","Verbal+Perceptual","Theory_of_Mind","BFAS_Facets")
+  )
+}
+
+# BIG FIVE
+run_bigfive_IQ_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_TOT, THEORY_OF_MIND, BIG5),
+    labels = c("Demographics","IQ_Total","Theory_of_Mind","Big_Five")
+  )
+}
+run_bigfive_VP_TOM <- function(attachment = c("secure","avoidant","anxious"), data) {
+  y <- attachment_outcome(attachment)
+  stepwise_hc3(
+    outcome = y, data = data,
+    blocks = list(DEMOG, IQ_VP, THEORY_OF_MIND, BIG5),
+    labels = c("Demographics","Verbal+Perceptual","Theory_of_Mind","Big_Five")
+  )
+}
+
+# ---- Run & print ----
+ATTACHMENTS <- c("secure","avoidant","anxious")
+
+for (att in ATTACHMENTS) {
+  cat("\n\n", strrep("#", 80), "\n", sep = "")
+  cat("ATTACHMENT OUTCOME:", toupper(att), "\n")
+  cat(strrep("#", 80), "\n")
+  
+  # PID-5 (use PID5data)
+  print_report(run_pid5_facets_IQ_TOM(att, PID5data))
+  print_report(run_pid5_facets_VP_TOM(att, PID5data))
+  print_report(run_pid5_domains_IQ_TOM(att, PID5data))
+  print_report(run_pid5_domains_VP_TOM(att, PID5data))
+  
+  # BFAS/Big Five (use B5Data with PID-5 removed)
+  print_report(run_bfas_facets_IQ_TOM(att, B5Data))
+  print_report(run_bfas_facets_VP_TOM(att, B5Data))
+  print_report(run_bigfive_IQ_TOM(att, B5Data))
+  print_report(run_bigfive_VP_TOM(att, B5Data))
+}
+
+# =============================================================================
+# End of script
+# =============================================================================
+```
+
+Factor Extension Analysis
+```{r}
+# Load in the data
+data <- read.csv("/Users/march341/Desktop/IQ and Attachment /Attachment_Dataset.csv")
+
+# Variables you want to keep
+core_vars <- c("Volatility", "Withdrawal", "Compassion", "Politeness", "Industriousness", "Orderliness", "Enthusiasm", "Assertiveness", "Intellect", "Openness", "PID5_Anxiousness", "PID5_Depressivity", "PID5_Emotional_lability", "PID5_Hostility", "PID5_Perseveration", "PID5_Rigid_Perfectionism", "PID5_Separation_insecurity", "PID5_Submissiveness", "PID5_Suspiciousness", "PID5_Withdrawal", "PID5_Attention_Seeking", "PID5_Callousness", "PID5_Deceitfulness", "PID5_Grandiosity", "PID5_Manipulativeness", "PID5_Intimacy_Avoidance", "PID5_Restricted_affectivity", "PID5_Distractibility", "PID5_Eccentricity", "PID5_Perceptual_Dysregulation", "PID5_Risk_Taking", "PID5_Unusual_Beliefs_Experiences", "PID5_Impulsivity", "PID5_Irresponsibility", "PID5_Anhedonia", "Empathy", "Absorption", "IQ4")
+
+# Attachment variables 
+attach_vars <- c("Avoidance", "Ambivalence")
+
+# Create a new data set with only the core and extension variables 
+new_data <- data[, c(core_vars, attach_vars)]
+
+new_data <- new_data %>%
+  mutate(
+    Secure_Attachment_raw = -rowMeans(dplyr::select(., Avoidance, Ambivalence), na.rm = TRUE),
+    Secure_Attachment = as.numeric(scale(Secure_Attachment_raw))
+  ) %>%
+  dplyr::select(-Secure_Attachment_raw) 
+
+## --- Factor Extension Analysis ---
+
+# Column where core variables end
+core_end  <- 38
+#Column where extension variables end
+total_end <- ncol(new_data)
+stopifnot(total_end >= core_end + 1)
+
+## --- Correlations and PD smoothing ---
+
+# Compute polychoric correlation matrix
+  # Full correlation matrix
+  R <- psych::mixed.cor(new_data)$rho
+  R <- psych::cor.smooth(R)
+  
+  # Correlation matrix for core variables
+  R_AA <- R[1:core_end, 1:core_end, drop = FALSE]
+  #Correlation matrix for the extension variables
+  R_BA <- R[(core_end+1):total_end, 1:core_end, drop = FALSE]
+
+
+## --- Fit EFA with 10 factors on the CORE set ---
+set.seed(8121)
+fit_core <- fa(R_AA, nfactors = 10, fm = "minres", rotate = "oblimin", 
+               n.obs = nrow(new_data))
+
+## --- Extension: Λ_B = R_BA %*% R_AA^{-1} %*% Λ_A  ---
+Lambda_A <- as.matrix(fit_core$loadings)  
+
+# Invert R_AA robustly
+inv_R_AA <- tryCatch(solve(R_AA), error = function(e) MASS::ginv(R_AA))
+
+Lambda_B <- R_BA %*% inv_R_AA %*% Lambda_A  
+
+## --- Structure loadings for B: S_B = Λ_B %*% Φ ---
+Phi <- fit_core$Phi                          
+S_B  <- Lambda_B %*% Phi
+
+## --- 6) Combine for inspection ---
+Lambda_full <- rbind(Lambda_A, Lambda_B)
+rownames(Lambda_full) <- colnames(new_data)
+
+# Useful outputs:
+list(
+  heywood_core = fit_core$Heywood,
+  core_uniqueness_neg = names(which(fit_core$u2 < -1e-5)),
+  extension_pattern_loadings = Lambda_B,
+  extension_structure_loadings = S_B,
+  all_loadings = Lambda_full
+)
+
+# --- Save results to CSVs ---
+
+# 1. Pattern loadings for the extension variables
+write.csv(
+  Lambda_B,
+  file = "extension_pattern_loadings.csv",
+  row.names = TRUE
+)
+
+# 2. Structure loadings for the extension variables
+write.csv(
+  S_B,
+  file = "extension_structure_loadings.csv",
+  row.names = TRUE
+)
+
+# 3. Full combined loadings (core + extension)
+write.csv(
+  Lambda_full,
+  file = "all_factor_loadings.csv",
+  row.names = TRUE
+)
+
+
+# --- Order factors for simple structure ---
+fit_sorted <- psych::fa.sort(fit_core)
+col_order  <- colnames(as.matrix(fit_sorted$loadings))
+
+# Apply same column order to the full matrix
+Lambda_full_sorted <- Lambda_full[, col_order, drop = FALSE]
+
+# --- Order rows by primary factor and loading strength ---
+primary_idx <- apply(abs(Lambda_full_sorted), 1, which.max)
+primary_val <- mapply(function(i, j) Lambda_full_sorted[i, j],
+                      i = seq_len(nrow(Lambda_full_sorted)), j = primary_idx)
+row_order <- order(primary_idx, -abs(primary_val))
+Lambda_simple <- Lambda_full_sorted[row_order, , drop = FALSE]
+
+# --- Label the largest loading per variable ---
+
+Lambda_num <- as.matrix(Lambda_simple)  
+
+# Format everything to two decimals first
+Lambda_fmt <- matrix(sprintf("%.2f", Lambda_num),
+                     nrow = nrow(Lambda_num), ncol = ncol(Lambda_num),
+                     dimnames = dimnames(Lambda_num))
+
+# Add an asterisk to the largest absolute loading in each row
+primary_col <- max.col(abs(Lambda_num), ties.method = "first")
+for (i in seq_len(nrow(Lambda_fmt))) {
+  Lambda_fmt[i, primary_col[i]] <- paste0(Lambda_fmt[i, primary_col[i]], "*")
+}
+
+# --- Move extension variables to the bottom ---
+extension_vars <- c("Avoidance", "Ambivalence", "Secure_Attachment")
+is_ext <- rownames(Lambda_fmt) %in% extension_vars
+Lambda_fmt <- rbind(Lambda_fmt[!is_ext, , drop = FALSE],
+                    Lambda_fmt[ is_ext, , drop = FALSE])
+
+# --- Save both numeric and labeled versions ---
+write.csv(Lambda_simple, "pattern_loadings_full_simple_structure.csv", row.names = TRUE)
+write.csv(Lambda_fmt, "pattern_loadings_full_simple_structure_labeled.csv", row.names = TRUE)
+
+# --- Structure matrix in same order ---
+Structure_full <- as.matrix(Lambda_full[, colnames(Lambda_simple), drop = FALSE]) %*%
+                  fit_core$Phi[colnames(Lambda_simple), colnames(Lambda_simple), drop = FALSE]
+Structure_full <- Structure_full[row_order, , drop = FALSE]
+Structure_full <- rbind(Structure_full[!is_ext, , drop = FALSE],
+                        Structure_full[ is_ext, , drop = FALSE])
+
+write.csv(Structure_full, "structure_loadings_full_simple_structure.csv", row.names = TRUE)
+
+```
